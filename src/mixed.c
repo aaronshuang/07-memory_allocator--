@@ -349,16 +349,18 @@ void mixed_free(void *ptr) {
 }
 
 void *mixed_malloc(size_t size) {
+    void *ptr = NULL;
     if (mixed_counter == 0) {
-        return mixed_first_fit_malloc(size);
+        ptr = mixed_first_fit_malloc(size);
     }
     else if (mixed_counter == 1) {
-        return mixed_best_fit_malloc(size);
+        ptr = mixed_best_fit_malloc(size);
     }
     else {
-        return mixed_worst_fit_malloc(size);
+        ptr = mixed_worst_fit_malloc(size);
     }
-    mixed_counter = (mixed_counter + 1) % 3;
+    mixed_counter = (mixed_counter + 1) % 3; 
+    return ptr;
 }
 
 /**
