@@ -5,7 +5,6 @@
 
 #include "buddy_allocation.h"
 #define PAGE_SIZE 4096
-#define MAX_REGIONS 256
 
 static size_t total_memory_mapped = 0;
 static size_t currently_allocated = 0;
@@ -15,12 +14,13 @@ static buddy_allocation_block_header_t *free_bins[NUM_BINS];
 void *heap_start;
 
 // Used to handle where the mmap blocks are
-typedef struct {
+typedef struct mapped_region {
     char *base_addr;
     size_t size;
+    struct mapped_region *next;
 } mapped_region_t;
 
-static mapped_region_t regions[MAX_REGIONS];
+static mapped_region_t *region_list_head = NULL;
 
 /*
 Find the smallest order greater than size
@@ -39,40 +39,66 @@ static bool request_more_memory(size_t required_size) {
     }
 
     int index = get_bin_index(mmap_size);
-    if (index < 0 || index >= NUM_BINS || num_regions >= MAX_REGIONS) return false;
+    if (index < 0 || index >= NUM_BINS) {
+        return false; // Exceeds max allowable order
+    }
 
     void *mapped_region = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (mapped_region == MAP_FAILED) return false;
+    if (mapped_region == MAP_FAILED) {
+        return false;
+    }
 
-    regions[num_regions].base_addr = (char *)mapped_region;
-    regions[num_regions].size = mmap_size;
-    num_regions++;
     total_memory_mapped += mmap_size;
+    num_regions++;
 
     buddy_allocation_block_header_t *root = (buddy_allocation_block_header_t *)mapped_region;
     root->is_free = true;
     root->order = index + MIN_ORDER;
     root->magic = 0;
     
+    // Insert into free bins
     root->prev_free = NULL;
     root->next_free = free_bins[index];
-    if (free_bins[index]) free_bins[index]->prev_free = root;
+    if (free_bins[index]) {
+        free_bins[index]->prev_free = root;
+    }
     free_bins[index] = root;
+
+    mapped_region_t *tracker = (mapped_region_t *)buddy_allocation_malloc(sizeof(mapped_region_t));
+    if (!tracker) {
+        return false; 
+    }
+
+    tracker->base_addr = (char *)mapped_region;
+    tracker->size = mmap_size;
+    tracker->next = region_list_head;
+    region_list_head = tracker;
 
     return true;
 }
 
 int buddy_allocation_init(size_t initial_size) {
-    for (size_t i = 0; i < num_regions; i++) {
-        munmap(regions[i].base_addr, regions[i].size);
+    mapped_region_t *curr = region_list_head;
+    while (curr != NULL) {
+        mapped_region_t *next = curr->next;
+        munmap(curr->base_addr, curr->size);
+        curr = next;
     }
-    num_regions = 0;
+
+    for (int i = 0; i < NUM_BINS; i++) {
+        free_bins[i] = NULL;
+    }
+
     total_memory_mapped = 0;
     currently_allocated = 0;
+    num_regions = 0;
+    
+    region_list_head = NULL;
 
-    for (int i = 0; i < NUM_BINS; i++) free_bins[i] = NULL;
-
-    if (!request_more_memory(initial_size)) return -1;
+    if (!request_more_memory(initial_size)) {
+        fprintf(stderr, "Error: Initial MMAP failed\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -154,13 +180,13 @@ void buddy_allocation_free(void *ptr) {
         return;
     }
 
-    mapped_region_t *region = NULL;
-    for (size_t i = 0; i < num_regions; i++) {
-        if ((char *)block >= regions[i].base_addr && 
-            (char *)block < regions[i].base_addr + regions[i].size) {
-            region = &regions[i];
+    mapped_region_t *region = region_list_head;
+    while (region != NULL) {
+        if ((char *)block >= region->base_addr && 
+            (char *)block < region->base_addr + region->size) {
             break;
         }
+        region = region->next;
     }
 
     if (region == NULL) {

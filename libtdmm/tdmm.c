@@ -49,7 +49,7 @@ void *t_malloc(size_t size) {
     if (current_strat == BEST_FIT) return best_fit_malloc(size);
     if (current_strat == WORST_FIT) return worst_fit_malloc(size);
 	if (current_strat == BUDDY) return buddy_allocation_malloc(size);
-    if (current_strat == MIXED) mixed_malloc(size);
+    if (current_strat == MIXED) return mixed_malloc(size);
     return NULL;
 }
 
