@@ -1,0 +1,6 @@
+/u/aarons07/cs429/07-memory_allocator++/build/CMakeFiles/hw7.dir
+/u/aarons07/cs429/07-memory_allocator++/build/CMakeFiles/edit_cache.dir
+/u/aarons07/cs429/07-memory_allocator++/build/CMakeFiles/rebuild_cache.dir
+/u/aarons07/cs429/07-memory_allocator++/build/libtdmm/CMakeFiles/tdmm.dir
+/u/aarons07/cs429/07-memory_allocator++/build/libtdmm/CMakeFiles/edit_cache.dir
+/u/aarons07/cs429/07-memory_allocator++/build/libtdmm/CMakeFiles/rebuild_cache.dir

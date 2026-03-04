@@ -1,0 +1,2 @@
+/usr/bin/ar qc libtdmm.a CMakeFiles/tdmm.dir/tdmm.c.o CMakeFiles/tdmm.dir/__/src/best_fit.c.o CMakeFiles/tdmm.dir/__/src/buddy_allocation.c.o CMakeFiles/tdmm.dir/__/src/first_fit.c.o CMakeFiles/tdmm.dir/__/src/mixed.c.o CMakeFiles/tdmm.dir/__/src/worst_fit.c.o
+/usr/bin/ranlib libtdmm.a
