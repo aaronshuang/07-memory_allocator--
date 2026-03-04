@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define MIN_ORDER 0
-#define MAX_ORDER 24
+#define MAX_ORDER 26
 #define NUM_BINS (MAX_ORDER - MIN_ORDER + 1)
 
 typedef struct buddy_allocation_block_header {

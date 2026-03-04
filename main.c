@@ -65,7 +65,7 @@ void generate_report_csvs() {
     FILE* fm = fopen("malloc_speeds.csv", "w");
     fprintf(fm, "Size_Bytes,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY\n");
     for (int i = 0; i < NUM_SIZES; i++) {
-        fprintf(fm, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], malloc_results[0][i], malloc_results[1][i], malloc_results[2][i], malloc_results[3][i], free_results[4][i]);
+        fprintf(fm, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], malloc_results[0][i], malloc_results[1][i], malloc_results[2][i], malloc_results[3][i], malloc_results[4][i]);
     }
     fclose(fm);
 
