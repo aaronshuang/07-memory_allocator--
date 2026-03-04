@@ -1,0 +1,5 @@
+FILE(GLOB TDMM_SOURCES "*.c")
+FILE(GLOB STRATEGY_SOURCES "${CMAKE_SOURCE_DIR}/src/*.c")
+MESSAGE(STATUS "Compiling library tdmm with sources: ${TDMM_SOURCES} ${STRATEGY_SOURCES}")
+add_library(tdmm STATIC ${TDMM_SOURCES} ${STRATEGY_SOURCES})
+target_include_directories(tdmm PUBLIC ${CMAKE_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR})
