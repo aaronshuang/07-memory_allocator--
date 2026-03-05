@@ -12,6 +12,7 @@
 typedef struct buddy_allocation_block_header {
     uint32_t magic;
     size_t order;
+    size_t real_size;
     bool is_free;
     struct buddy_allocation_block_header *next_free;
     struct buddy_allocation_block_header *prev_free;

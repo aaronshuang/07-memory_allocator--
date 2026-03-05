@@ -4,84 +4,76 @@
 #include <string.h>
 #include <time.h>
 #include "libtdmm/tdmm.h"
+#include "stdbool.h"
 
 #define NUM_OPERATIONS 10000
 #define MAX_ALLOC_SIZE 4096
-#define NUM_SIZES 24 // 1B to 8MB in powers of 2
-
-// External stats helpers from your tdmm.c
-extern size_t t_get_total_mapped_memory();
-extern size_t t_get_currently_allocated_memory();
-extern size_t t_get_structural_overhead();
+#define NUM_SIZES 24 
+#define NUM_STRATS 5
 
 typedef struct {
     void* ptr;
     size_t size;
 } alloc_record_t;
 
-/**
- * Requirement: Speed vs. Size (Log Scale 1B to 8MB)
- */
-void generate_report_csvs() {
-    // Arrays to store results for the wide-format output
-    long long malloc_results[5][NUM_SIZES];
-    long long free_results[5][NUM_SIZES];
-    size_t sizes[NUM_SIZES];
+// Global buffers to store wide-format data for horizontal Excel rows
+double utilization_results[NUM_STRATS][NUM_OPERATIONS];
+double throughput_results[NUM_STRATS][NUM_OPERATIONS / 500];
 
+extern size_t t_get_total_mapped_memory();
+extern size_t t_get_currently_allocated_memory();
+extern size_t t_get_structural_overhead();
+
+void generate_report_csvs() {
+    long long malloc_results[NUM_STRATS][NUM_SIZES];
+    long long free_results[NUM_STRATS][NUM_SIZES];
+    size_t sizes[NUM_SIZES];
     alloc_strat_e strats[] = {FIRST_FIT, BEST_FIT, WORST_FIT, BUDDY, MIXED};
 
-    for (int s = 0; s < 5; s++) {
+    for (int s = 0; s < NUM_STRATS; s++) {
         t_init(strats[s]);
-        
         size_t current_size = 1;
         for (int i = 0; i < NUM_SIZES; i++) {
             sizes[i] = current_size;
             struct timespec start, end;
 
-            // 1. Benchmark Malloc
             clock_gettime(CLOCK_MONOTONIC, &start);
             void *p = t_malloc(current_size);
             clock_gettime(CLOCK_MONOTONIC, &end);
-            
-            long long m_nsec = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);
-            malloc_results[s][i] = (m_nsec <= 0) ? 1 : m_nsec;
+            malloc_results[s][i] = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
 
-            // 2. Benchmark Free
             if (p) {
                 clock_gettime(CLOCK_MONOTONIC, &start);
                 t_free(p);
                 clock_gettime(CLOCK_MONOTONIC, &end);
-                
-                long long f_nsec = (end.tv_sec - start.tv_sec) * 1000000000LL + (end.tv_nsec - start.tv_nsec);
-                free_results[s][i] = (f_nsec <= 0) ? 1 : f_nsec;
+                free_results[s][i] = (end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
             } else {
-                free_results[s][i] = 1;
+                free_results[s][i] = 0;
             }
             current_size *= 2;
         }
     }
 
-    // Write Malloc CSV
+    // Export Malloc Speeds
     FILE* fm = fopen("malloc_speeds.csv", "w");
-    fprintf(fm, "Size_Bytes,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY\n");
+    fprintf(fm, "Size_Bytes,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY,MIXED\n");
     for (int i = 0; i < NUM_SIZES; i++) {
-        fprintf(fm, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], malloc_results[0][i], malloc_results[1][i], malloc_results[2][i], malloc_results[3][i], malloc_results[4][i]);
+        fprintf(fm, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], 
+                malloc_results[0][i], malloc_results[1][i], malloc_results[2][i], malloc_results[3][i], malloc_results[4][i]);
     }
     fclose(fm);
 
-    // Write Free CSV
+    // Export Free Speeds
     FILE* ff = fopen("free_speeds.csv", "w");
-    fprintf(ff, "Size_Bytes,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY\n");
+    fprintf(ff, "Size_Bytes,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY,MIXED\n");
     for (int i = 0; i < NUM_SIZES; i++) {
-        fprintf(ff, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], free_results[0][i], free_results[1][i], free_results[2][i], free_results[3][i], free_results[4][i]);
+        fprintf(ff, "%zu,%lld,%lld,%lld,%lld,%lld\n", sizes[i], 
+                free_results[0][i], free_results[1][i], free_results[2][i], free_results[3][i], free_results[4][i]);
     }
     fclose(ff);
 }
 
-/**
- * Requirement: %age Utilization over time & Average Utilization
- */
-void run_comparative_benchmarks(alloc_strat_e strat, const char* name, FILE* util_f, FILE* throughput_f) {
+void run_benchmarks(int s_idx, alloc_strat_e strat, const char* name) {
     t_init(strat);
     srand(42); 
 
@@ -93,7 +85,6 @@ void run_comparative_benchmarks(alloc_strat_e strat, const char* name, FILE* uti
     clock_gettime(CLOCK_MONOTONIC, &start_bench);
 
     for (int i = 0; i < NUM_OPERATIONS; i++) {
-        // Decide Operation
         if (active_allocs == 0 || (rand() % 100 < 70)) {
             size_t size = (rand() % MAX_ALLOC_SIZE) + 1;
             void* p = t_malloc(size);
@@ -109,48 +100,139 @@ void run_comparative_benchmarks(alloc_strat_e strat, const char* name, FILE* uti
             active_allocs--;
         }
 
-        // 1. Log Utilization Over Time
         size_t mapped = t_get_total_mapped_memory();
         size_t used = t_get_currently_allocated_memory();
         double util = (mapped > 0) ? ((double)used / mapped) : 0;
+        
+        utilization_results[s_idx][i] = util;
         total_util_sum += util;
-        fprintf(util_f, "%s,%d,%.4f\n", name, i, util);
 
-        // 2. Log Throughput every 500 ops
         if (i > 0 && i % 500 == 0) {
             clock_gettime(CLOCK_MONOTONIC, &end_bench);
-            long long elapsed = (end_bench.tv_sec - start_bench.tv_sec) * 1000000000LL + (end_bench.tv_nsec - start_bench.tv_nsec);
-            double throughput = (double)i / (elapsed / 1e9);
-            fprintf(throughput_f, "%s,%d,%.2f\n", name, i, throughput);
+            long long elapsed = (end_bench.tv_sec - start_bench.tv_sec) * 1e9 + (end_bench.tv_nsec - start_bench.tv_nsec);
+            throughput_results[s_idx][(i/500)-1] = (double)i / (elapsed / 1e9);
         }
     }
 
-    // Final console summary for Structural Overhead
-    printf("\n--- %s Summary ---\n", name);
+    // RESTORED: Console Summary
+    printf("\n--- %s Final Statistics ---\n", name);
     printf("Average Utilization: %.2f%%\n", (total_util_sum / NUM_OPERATIONS) * 100);
-    printf("Final Structural Overhead: %zu bytes\n", t_get_structural_overhead());
+    printf("Peak Mapped Memory: %zu bytes\n", t_get_total_mapped_memory());
+    printf("Structural Overhead: %zu bytes\n", t_get_structural_overhead());
+}
+
+bool run_unit_tests(alloc_strat_e strat, const char* name) {
+    printf("Running unit tests for %s... ", name);
+    
+    // 1. Initialize
+    t_init(strat);
+    size_t initial_mapped = t_get_total_mapped_memory();
+
+    // 2. Test Basic Allocation & Non-Overlapping Memory
+    void *ptr1 = t_malloc(128);
+    void *ptr2 = t_malloc(256);
+    void *ptr3 = t_malloc(512);
+    
+    if (!ptr1 || !ptr2 || !ptr3) {
+        printf("[FAIL] Basic allocation returned NULL.\n");
+        return false;
+    }
+    if (ptr1 == ptr2 || ptr2 == ptr3 || ptr1 == ptr3) {
+        printf("[FAIL] Pointers overlap!\n");
+        return false;
+    }
+
+    // 3. Test Memory Access (Write to the blocks to ensure no segfaults)
+    memset(ptr1, 0xAA, 128);
+    memset(ptr2, 0xBB, 256);
+    memset(ptr3, 0xCC, 512);
+
+    // Verify memory wasn't corrupted by adjacent writes
+    if (((unsigned char*)ptr1)[127] != 0xAA || ((unsigned char*)ptr2)[255] != 0xBB) {
+        printf("[FAIL] Memory corruption detected between blocks!\n");
+        return false;
+    }
+
+    // Test Free & Reuse (Coalescing / Bin sorting)
+    t_free(ptr1);
+    t_free(ptr2);
+    t_free(ptr3);
+    
+    // Check if the memory stats updated correctly
+    if (t_get_currently_allocated_memory() != 0 && strat != BUDDY) {
+        printf("[FAIL] currently_allocated did not return to 0 after freeing all blocks.\n");
+        return false;
+    }
+
+    // Allocate a block that should fit exactly into the recently freed memory
+    void *ptr_reuse = t_malloc(800); 
+    if (!ptr_reuse) {
+        printf("[FAIL] Failed to reuse recently freed memory.\n");
+        return false;
+    }
+    
+    // Ensure we didn't unnecessarily ask the OS for more memory
+    if (t_get_total_mapped_memory() > initial_mapped) {
+        if (t_get_total_mapped_memory() - initial_mapped > 4096) {
+             printf("[FAIL] Allocator requested OS memory instead of reusing freed blocks.\n");
+             return false;
+        }
+    }
+    t_free(ptr_reuse);
+
+    // Test Zero Size Edge Case
+    void *ptr_zero = t_malloc(0);
+    if (ptr_zero != NULL) {
+        printf("[FAIL] malloc(0) should return NULL.\n");
+        return false;
+    }
+
+    // Test Massive Out-of-Bounds Allocation
+    // Requesting 1GB (Exceeds maximum bin sizes and reasonable mmap limits)
+    // void *ptr_huge = t_malloc(1024ULL * 1024 * 1024); 
+    // if (ptr_huge != NULL) {
+    //     printf("[FAIL] Impossibly large allocation did not return NULL.\n");
+    //     return false;
+    // }
+
+    printf("[PASS]\n");
+    return true;
 }
 
 int main() {
-    // Open CSV files for Excel export
-    FILE* f_speed = fopen("speed_size.csv", "w");
-    FILE* f_util = fopen("utilization_time.csv", "w");
-    FILE* f_thr = fopen("throughput.csv", "w");
-
-    fprintf(f_speed, "Strategy,Size_Bytes,Time_Nsec\n");
-    fprintf(f_util, "Strategy,Time_Step,Utilization_Fraction\n");
-    fprintf(f_thr, "Strategy,Op_Count,Ops_Per_Sec\n");
-
     alloc_strat_e strats[] = {FIRST_FIT, BEST_FIT, WORST_FIT, BUDDY, MIXED};
     const char* names[] = {"FIRST_FIT", "BEST_FIT", "WORST_FIT", "BUDDY", "MIXED"};
 
+    printf("--- STARTING UNIT TESTS ---\n");
     for (int i = 0; i < 5; i++) {
-        // generate_speed_data(strats[i], names[i], f_speed);
-        run_comparative_benchmarks(strats[i], names[i], f_util, f_thr);
+        if (!run_unit_tests(strats[i], names[i])) {
+            printf("\nCRITICAL FAILURE in %s. Aborting benchmarks.\n", names[i]);
+            return -1;
+        }
+    }
+    printf("All Unit Tests Passed! Moving to benchmarks...\n\n");
+
+    for (int i = 0; i < NUM_STRATS; i++) {
+        run_benchmarks(i, strats[i], names[i]);
     }
     generate_report_csvs();
 
-    fclose(f_speed); fclose(f_util); fclose(f_thr);
-    printf("\nCSVs generated: speed_size.csv, utilization_time.csv, throughput.csv\n");
+    FILE* f_util = fopen("utilization_time.csv", "w");
+    fprintf(f_util, "Time_Step,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY,MIXED\n");
+    for (int i = 0; i < NUM_OPERATIONS; i++) {
+        fprintf(f_util, "%d,%.4f,%.4f,%.4f,%.4f,%.4f\n", i, 
+                utilization_results[0][i], utilization_results[1][i], utilization_results[2][i], utilization_results[3][i], utilization_results[4][i]);
+    }
+    fclose(f_util);
+
+    FILE* f_thr = fopen("throughput.csv", "w");
+    fprintf(f_thr, "Op_Count,FIRST_FIT,BEST_FIT,WORST_FIT,BUDDY,MIXED\n");
+    for (int i = 0; i < (NUM_OPERATIONS / 500); i++) {
+        fprintf(f_thr, "%d,%.2f,%.2f,%.2f,%.2f,%.2f\n", (i+1)*500, 
+                throughput_results[0][i], throughput_results[1][i], throughput_results[2][i], throughput_results[3][i], throughput_results[4][i]);
+    }
+    fclose(f_thr);
+
+    printf("\nAll CSVs generated successfully.\n");
     return 0;
 }

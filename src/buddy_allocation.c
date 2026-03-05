@@ -162,9 +162,10 @@ void *buddy_allocation_malloc(size_t size) {
     if (allocated_block->next_free) allocated_block->next_free->prev_free = NULL;
 
     allocated_block->is_free = false;
+    allocated_block->real_size = size;
     allocated_block->magic = 0xDEADBEEF; 
     
-    currently_allocated += (1ULL << allocated_block->order);
+    currently_allocated += size;
 
     return (void *)(allocated_block + 1);
 }
@@ -196,7 +197,7 @@ void buddy_allocation_free(void *ptr) {
 
     block->is_free = true;
     block->magic = 0; // Clear magic number
-    currently_allocated -= (1ULL << block->order);
+    currently_allocated -= block->real_size;
 
     // Iterative Coalescing
     while (block->order < MAX_ORDER) {
@@ -250,7 +251,8 @@ size_t buddy_allocation_get_currently_allocated_memory() {
     return currently_allocated;
 }
 size_t buddy_allocation_get_structural_overhead() {
-    return BUDDY_ALLOCATION_HEADER_SIZE * NUM_BINS + num_regions * sizeof(mapped_region_t);
+    size_t block_headers = (total_memory_mapped / (1ULL << MIN_ORDER)) * sizeof(buddy_allocation_block_header_t);
+    return block_headers + (num_regions * sizeof(mapped_region_t));
 }
 
  
