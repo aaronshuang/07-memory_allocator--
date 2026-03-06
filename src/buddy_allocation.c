@@ -214,7 +214,6 @@ void buddy_allocation_free(void *ptr) {
             break;
         }
         
-        // Use heap_start instead of the undefined heap_base
         buddy_allocation_block_header_t *buddy = 
             (buddy_allocation_block_header_t *)((char *)region->base_addr + buddy_offset);
 
