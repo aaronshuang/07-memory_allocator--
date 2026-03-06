@@ -9,6 +9,7 @@
 static size_t total_memory_mapped = 0;
 static size_t currently_allocated = 0;
 static size_t num_regions = 0;
+static size_t num_blocks = 0;
 
 static buddy_allocation_block_header_t *free_bins[NUM_BINS];
 void *heap_start;
@@ -145,6 +146,8 @@ void *buddy_allocation_malloc(size_t size) {
         buddy_allocation_block_header_t *buddy = 
             (buddy_allocation_block_header_t *)((char *)block + half);
 
+        num_blocks++;
+
         block->order = current_index + MIN_ORDER;
         buddy->order = current_index + MIN_ORDER;
         buddy->is_free = true;
@@ -232,6 +235,7 @@ void buddy_allocation_free(void *ptr) {
             block = buddy;
         }
 
+        num_blocks--;
         // Increment the order and try to merge again
         block->order++;
     }
@@ -251,7 +255,7 @@ size_t buddy_allocation_get_currently_allocated_memory() {
     return currently_allocated;
 }
 size_t buddy_allocation_get_structural_overhead() {
-    size_t block_headers = (total_memory_mapped / (1ULL << MIN_ORDER)) * sizeof(buddy_allocation_block_header_t);
+    size_t block_headers = num_blocks * sizeof(buddy_allocation_block_header_t);
     return block_headers + (num_regions * sizeof(mapped_region_t));
 }
 
